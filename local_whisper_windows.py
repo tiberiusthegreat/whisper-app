@@ -9,12 +9,15 @@ import win32clipboard
 from faster_whisper import WhisperModel
 
 # --- CONFIGURATION ---
-MODEL_SIZE = "base"
+MODEL_SIZE = "tiny"
 DEVICE = "cpu"
 COMPUTE_TYPE = "int8"
 HOTKEY = "ctrl+space"
 TEMP_FILE = "temp_recording.wav"
 SAMPLE_RATE = 16000
+LANGUAGE = "en"
+BEAM_SIZE = 1
+BEST_OF = 1
 
 print("--- SuperWhisper Local Port (CPU Optimized) ---")
 print(f"Loading model: {MODEL_SIZE} on {DEVICE}...")
@@ -88,6 +91,7 @@ def stop_recording():
         return
 
     try:
+        started_at = time.perf_counter()
         audio_np = np.concatenate(audio_data, axis=0)
         with wave.open(TEMP_FILE, "wb") as wf:
             wf.setnchannels(1)
@@ -95,13 +99,22 @@ def stop_recording():
             wf.setframerate(SAMPLE_RATE)
             wf.writeframes((audio_np * 32767).astype(np.int16).tobytes())
 
-        segments, info = model.transcribe(TEMP_FILE, beam_size=5)
+        segments, info = model.transcribe(
+            TEMP_FILE,
+            language=LANGUAGE,
+            beam_size=BEAM_SIZE,
+            best_of=BEST_OF,
+            condition_on_previous_text=False,
+            vad_filter=True,
+            without_timestamps=True,
+        )
         text = "".join([segment.text for segment in segments]).strip()
+        elapsed = time.perf_counter() - started_at
 
         if text:
             previous_clipboard = capture_clipboard()
             pyperclip.copy(text)
-            print(f"DONE: {text}")
+            print(f"DONE ({elapsed:.2f}s): {text}")
 
             time.sleep(0.1)
             keyboard.press_and_release("ctrl+v")
@@ -109,7 +122,7 @@ def stop_recording():
             restore_clipboard(previous_clipboard)
             print(">> Auto-pasted!")
         else:
-            print("!! No speech detected.")
+            print(f"!! No speech detected. ({elapsed:.2f}s)")
     except Exception as e:
         print(f"!! Error during processing: {e}")
 

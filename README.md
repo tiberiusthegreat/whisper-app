@@ -29,6 +29,6 @@ whisper.bat
 
 ## Notes
 
-- Uses `faster-whisper` locally on CPU.
+- Uses `faster-whisper` locally on CPU with low-latency settings for quick dictation.
 - Default hotkey is `Ctrl+Space`.
 - Temporary audio is written to `temp_recording.wav` during transcription and cleaned up on exit.
