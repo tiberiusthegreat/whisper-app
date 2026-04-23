@@ -45,6 +45,7 @@ print("Press CTRL + SPACE to start/stop recording.")
 
 recording = False
 audio_data = []
+did_fallback_to_cpu = False
 
 CLIPBOARD_FORMATS_TO_PRESERVE = [
     win32clipboard.CF_DIB,
@@ -104,6 +105,22 @@ def detect_language(audio_array):
     return detected_language, preview_text
 
 
+def should_fallback_to_cpu(error):
+    message = str(error).lower()
+    return "cublas" in message or "cudnn" in message or "cuda" in message
+
+
+def ensure_cpu_model():
+    global model, DEVICE, COMPUTE_TYPE, did_fallback_to_cpu
+    if DEVICE == "cpu":
+        return
+    print("!! CUDA runtime unavailable. Falling back to CPU...")
+    model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+    DEVICE = "cpu"
+    COMPUTE_TYPE = "int8"
+    did_fallback_to_cpu = True
+
+
 def callback(indata, frames, time_info, status):
     if recording:
         audio_data.append(indata.copy())
@@ -157,6 +174,14 @@ def stop_recording():
         else:
             print(f"!! No speech detected. ({elapsed:.2f}s)")
     except Exception as e:
+        if should_fallback_to_cpu(e) and not did_fallback_to_cpu:
+            try:
+                ensure_cpu_model()
+                stop_recording()
+                return
+            except Exception as fallback_error:
+                print(f"!! Error during CPU fallback: {fallback_error}")
+                return
         print(f"!! Error during processing: {e}")
 
 
