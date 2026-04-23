@@ -1,28 +1,44 @@
-import os
 import time
-import sounddevice as sd
-import numpy as np
-import wave
+
 import keyboard
+import numpy as np
 import pyperclip
+import sounddevice as sd
 import win32clipboard
 from faster_whisper import WhisperModel
 
 # --- CONFIGURATION ---
 MODEL_SIZE = "tiny"
-DEVICE = "cpu"
-COMPUTE_TYPE = "int8"
 HOTKEY = "ctrl+space"
-TEMP_FILE = "temp_recording.wav"
 SAMPLE_RATE = 16000
-LANGUAGE = "en"
+ALLOWED_LANGUAGES = {"en", "fr"}
+DEFAULT_LANGUAGE = "en"
 BEAM_SIZE = 1
 BEST_OF = 1
 
-print("--- SuperWhisper Local Port (CPU Optimized) ---")
-print(f"Loading model: {MODEL_SIZE} on {DEVICE}...")
+print("--- SuperWhisper Local Port (Low Latency) ---")
 
-model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+
+def build_model():
+    preferred_configs = [
+        ("cuda", "float16"),
+        ("cuda", "int8_float16"),
+        ("cpu", "int8"),
+    ]
+    last_error = None
+
+    for device, compute_type in preferred_configs:
+        try:
+            print(f"Loading model: {MODEL_SIZE} on {device} ({compute_type})...")
+            model_obj = WhisperModel(MODEL_SIZE, device=device, compute_type=compute_type)
+            return model_obj, device, compute_type
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(f"Unable to initialize Whisper model: {last_error}")
+
+
+model, DEVICE, COMPUTE_TYPE = build_model()
 
 print("\nSUCCESS: Model loaded.")
 print("Press CTRL + SPACE to start/stop recording.")
@@ -69,6 +85,25 @@ def restore_clipboard(snapshot):
             pass
 
 
+def detect_language(audio_array):
+    segments, info = model.transcribe(
+        audio_array,
+        language=None,
+        beam_size=1,
+        best_of=1,
+        condition_on_previous_text=False,
+        vad_filter=True,
+        without_timestamps=True,
+    )
+    detected_language = getattr(info, "language", None) or DEFAULT_LANGUAGE
+    preview_text = "".join([segment.text for segment in segments]).strip()
+
+    if detected_language not in ALLOWED_LANGUAGES:
+        detected_language = DEFAULT_LANGUAGE
+
+    return detected_language, preview_text
+
+
 def callback(indata, frames, time_info, status):
     if recording:
         audio_data.append(indata.copy())
@@ -92,16 +127,12 @@ def stop_recording():
 
     try:
         started_at = time.perf_counter()
-        audio_np = np.concatenate(audio_data, axis=0)
-        with wave.open(TEMP_FILE, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(SAMPLE_RATE)
-            wf.writeframes((audio_np * 32767).astype(np.int16).tobytes())
+        audio_np = np.concatenate(audio_data, axis=0).astype(np.float32).flatten()
+        language, preview_text = detect_language(audio_np)
 
         segments, info = model.transcribe(
-            TEMP_FILE,
-            language=LANGUAGE,
+            audio_np,
+            language=language,
             beam_size=BEAM_SIZE,
             best_of=BEST_OF,
             condition_on_previous_text=False,
@@ -109,16 +140,18 @@ def stop_recording():
             without_timestamps=True,
         )
         text = "".join([segment.text for segment in segments]).strip()
+        if not text:
+            text = preview_text
         elapsed = time.perf_counter() - started_at
 
         if text:
             previous_clipboard = capture_clipboard()
             pyperclip.copy(text)
-            print(f"DONE ({elapsed:.2f}s): {text}")
+            print(f"DONE [{language}] ({elapsed:.2f}s): {text}")
 
-            time.sleep(0.1)
+            time.sleep(0.08)
             keyboard.press_and_release("ctrl+v")
-            time.sleep(0.1)
+            time.sleep(0.08)
             restore_clipboard(previous_clipboard)
             print(">> Auto-pasted!")
         else:
@@ -142,6 +175,3 @@ try:
             time.sleep(0.1)
 except KeyboardInterrupt:
     print("\nExiting...")
-finally:
-    if os.path.exists(TEMP_FILE):
-        os.remove(TEMP_FILE)
