@@ -8,13 +8,14 @@ import win32clipboard
 from faster_whisper import WhisperModel
 
 # --- CONFIGURATION ---
-MODEL_SIZE = "tiny"
+MODEL_SIZE = "base"
 HOTKEY = "ctrl+space"
 SAMPLE_RATE = 16000
 ALLOWED_LANGUAGES = {"en", "fr"}
 DEFAULT_LANGUAGE = "en"
-BEAM_SIZE = 1
-BEST_OF = 1
+BEAM_SIZE = 2
+BEST_OF = 2
+TEMPERATURE = 0.0
 
 print("--- SuperWhisper Local Port (Low Latency) ---")
 
@@ -95,6 +96,7 @@ def detect_language(audio_array):
         condition_on_previous_text=False,
         vad_filter=True,
         without_timestamps=True,
+        temperature=TEMPERATURE,
     )
     detected_language = getattr(info, "language", None) or DEFAULT_LANGUAGE
     preview_text = "".join([segment.text for segment in segments]).strip()
@@ -155,6 +157,7 @@ def stop_recording():
             condition_on_previous_text=False,
             vad_filter=True,
             without_timestamps=True,
+            temperature=TEMPERATURE,
         )
         text = "".join([segment.text for segment in segments]).strip()
         if not text:

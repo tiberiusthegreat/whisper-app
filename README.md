@@ -29,6 +29,6 @@ whisper.bat
 
 ## Notes
 
-- Uses `faster-whisper` with low-latency settings and prefers GPU automatically when available.
+- Uses `faster-whisper` with a balanced speed/accuracy profile and prefers GPU automatically when available.
 - Default hotkey is `Ctrl+Space`.
 - Dictation is limited to English and French, with direct in-memory transcription to reduce delay.
