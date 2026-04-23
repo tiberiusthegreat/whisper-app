@@ -5,6 +5,7 @@ import numpy as np
 import wave
 import keyboard
 import pyperclip
+import win32clipboard
 from faster_whisper import WhisperModel
 
 # --- CONFIGURATION ---
@@ -25,6 +26,44 @@ print("Press CTRL + SPACE to start/stop recording.")
 
 recording = False
 audio_data = []
+
+CLIPBOARD_FORMATS_TO_PRESERVE = [
+    win32clipboard.CF_DIB,
+    win32clipboard.CF_UNICODETEXT,
+    win32clipboard.CF_TEXT,
+]
+
+
+def capture_clipboard():
+    snapshot = []
+    try:
+        win32clipboard.OpenClipboard()
+        for clipboard_format in CLIPBOARD_FORMATS_TO_PRESERVE:
+            if win32clipboard.IsClipboardFormatAvailable(clipboard_format):
+                try:
+                    data = win32clipboard.GetClipboardData(clipboard_format)
+                    snapshot.append((clipboard_format, data))
+                except TypeError:
+                    pass
+    finally:
+        try:
+            win32clipboard.CloseClipboard()
+        except Exception:
+            pass
+    return snapshot
+
+
+def restore_clipboard(snapshot):
+    try:
+        win32clipboard.OpenClipboard()
+        win32clipboard.EmptyClipboard()
+        for clipboard_format, data in snapshot:
+            win32clipboard.SetClipboardData(clipboard_format, data)
+    finally:
+        try:
+            win32clipboard.CloseClipboard()
+        except Exception:
+            pass
 
 
 def callback(indata, frames, time_info, status):
@@ -60,14 +99,14 @@ def stop_recording():
         text = "".join([segment.text for segment in segments]).strip()
 
         if text:
-            previous_clipboard = pyperclip.paste()
+            previous_clipboard = capture_clipboard()
             pyperclip.copy(text)
             print(f"DONE: {text}")
 
             time.sleep(0.1)
             keyboard.press_and_release("ctrl+v")
             time.sleep(0.1)
-            pyperclip.copy(previous_clipboard)
+            restore_clipboard(previous_clipboard)
             print(">> Auto-pasted!")
         else:
             print("!! No speech detected.")
